@@ -74,8 +74,6 @@ import org.eclipse.lsp4j.debug.EvaluateResponse;
 import org.eclipse.lsp4j.debug.ExitedEventArguments;
 import org.eclipse.lsp4j.debug.InitializeRequestArguments;
 import org.eclipse.lsp4j.debug.NextArguments;
-import org.eclipse.lsp4j.debug.OutputEventArguments;
-import org.eclipse.lsp4j.debug.OutputEventArgumentsCategory;
 import org.eclipse.lsp4j.debug.PauseArguments;
 import org.eclipse.lsp4j.debug.RestartArguments;
 import org.eclipse.lsp4j.debug.RunInTerminalRequestArguments;
@@ -102,6 +100,7 @@ import org.eclipse.lsp4j.debug.Variable;
 import org.eclipse.lsp4j.debug.VariablesArguments;
 import org.eclipse.lsp4j.debug.VariablesResponse;
 import org.eclipse.lsp4j.debug.services.IDebugProtocolClient;
+import org.eclipse.lsp4j.debug.services.IDebugProtocolServer;
 import org.eclipse.lsp4j.jsonrpc.Endpoint;
 import org.eclipse.lsp4j.jsonrpc.messages.Either;
 import org.eclipse.lsp4j.jsonrpc.services.GenericEndpoint;
@@ -121,7 +120,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -139,14 +137,13 @@ import static org.ballerinalang.debugadapter.utils.PackageUtils.INIT_CLASS_NAME;
 import static org.ballerinalang.debugadapter.utils.PackageUtils.getQualifiedClassName;
 import static org.ballerinalang.debugadapter.utils.ServerUtils.isBalStackFrame;
 import static org.ballerinalang.debugadapter.utils.ServerUtils.isBalStrand;
-import static org.ballerinalang.debugadapter.utils.ServerUtils.isFastRunEnabled;
 import static org.ballerinalang.debugadapter.utils.ServerUtils.isNoDebugMode;
 import static org.ballerinalang.debugadapter.utils.ServerUtils.toBalBreakpoint;
 
 /**
  * JBallerina debug server implementation.
  */
-public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
+public class JBallerinaDebugServer implements IDebugProtocolServer {
 
     private IDebugProtocolClient client;
     private ClientConfigHolder clientConfigHolder;
@@ -271,39 +268,43 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
 
     @Override
     public CompletableFuture<Void> launch(Map<String, Object> args) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                clientConfigHolder = new ClientLaunchConfigHolder(args);
-                launchDebuggeeProgram();
-                return null;
-            } catch (Exception e) {
-                outputLogger.sendErrorOutput("Failed to launch the Ballerina program due to: " + e.getMessage());
-                throw new CompletionException(e);
-            }
-        });
+        try {
+            clientConfigHolder = new ClientLaunchConfigHolder(args);
+            launchDebuggeeProgram();
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            outputLogger.sendErrorOutput("Failed to launch the Ballerina program due to: " + e.getMessage());
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     @Override
     public CompletableFuture<Void> attach(Map<String, Object> args) {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                clientConfigHolder = new ClientAttachConfigHolder(args);
-                context.setDebugMode(ExecutionContext.DebugMode.ATTACH);
-                Project srcProject = context.getProjectCache().getProject(Path.of(clientConfigHolder.getSourcePath()));
-                context.setSourceProject(srcProject);
-                ClientAttachConfigHolder configHolder = (ClientAttachConfigHolder) clientConfigHolder;
+        try {
+            clientConfigHolder = new ClientAttachConfigHolder(args);
+            context.setDebugMode(ExecutionContext.DebugMode.ATTACH);
+            Project sourceProject = context.getProjectCache().getProject(Path.of(clientConfigHolder.getSourcePath()));
+            context.setSourceProject(sourceProject);
+            ClientAttachConfigHolder configHolder = (ClientAttachConfigHolder) clientConfigHolder;
 
-                String hostName = configHolder.getHostName().orElse("");
-                int portName = configHolder.getDebuggePort();
-                attachToRemoteVM(hostName, portName);
-                return null;
-            } catch (Exception e) {
-                String errorMessage = getAttachmentErrorMessage(e);
-                outputLogger.sendErrorOutput(errorMessage);
-                terminateDebugSession(context.getDebuggeeVM() != null, false);
-                throw new CompletionException(e);
+            String hostName = configHolder.getHostName().orElse("");
+            int portName = configHolder.getDebuggePort();
+            attachToRemoteVM(hostName, portName);
+            return CompletableFuture.completedFuture(null);
+        } catch (Exception e) {
+            String host = ((ClientAttachConfigHolder) clientConfigHolder).getHostName().orElse(LOCAL_HOST);
+            String portName;
+            try {
+                portName = Integer.toString(clientConfigHolder.getDebuggePort());
+            } catch (ClientConfigurationException clientConfigurationException) {
+                portName = VALUE_UNKNOWN;
             }
-        });
+            LOGGER.error(e.getMessage());
+            outputLogger.sendErrorOutput(String.format("Failed to attach to the target VM address: '%s:%s' due to: %s",
+                    host, portName, e.getMessage()));
+            terminateDebugSession(context.getDebuggeeVM() != null, false);
+            return CompletableFuture.failedFuture(e);
+        }
     }
 
     @Override
@@ -470,26 +471,15 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
         Project sourceProject = context.getProjectCache().getProject(Path.of(clientConfigHolder.getSourcePath()));
         context.setSourceProject(sourceProject);
         String sourceProjectRoot = context.getSourceProjectRoot();
-        // if the debug server runs in fast-run mode, send a notification to the client to re-run the remote program and
-        // re-attach to the new VM.
-        if (isFastRunEnabled(context)) {
-            int port = ServerUtils.findFreePort();
-            outputLogger.sendDebugServerOutput("Waiting for the debug process to start...%s%s"
-                    .formatted(System.lineSeparator(), System.lineSeparator()));
-            ServerUtils.sendFastRunNotification(context, port);
-            attachToRemoteVM(LOCAL_HOST, port);
-        } else {
-            BProgramRunner programRunner = context.getSourceProject() instanceof SingleFileProject ?
-                    new BSingleFileRunner((ClientLaunchConfigHolder) clientConfigHolder, sourceProjectRoot) :
-                    new BPackageRunner((ClientLaunchConfigHolder) clientConfigHolder, sourceProjectRoot);
+        BProgramRunner programRunner = context.getSourceProject() instanceof SingleFileProject ?
+                new BSingleFileRunner((ClientLaunchConfigHolder) clientConfigHolder, sourceProjectRoot) :
+                new BPackageRunner((ClientLaunchConfigHolder) clientConfigHolder, sourceProjectRoot);
 
-            if (context.getSupportsRunInTerminalRequest() && clientConfigHolder.getRunInTerminalKind() != null) {
-                launchInTerminal(programRunner);
-            } else {
-                Process debuggeeProcess = programRunner.start();
-                context.setLaunchedProcess(debuggeeProcess);
-                startListeningToProgramOutput();
-            }
+        if (context.getSupportsRunInTerminalRequest() && clientConfigHolder.getRunInTerminalKind() != null) {
+            launchInTerminal(programRunner);
+        } else {
+            context.setLaunchedProcess(programRunner.start());
+            startListeningToProgramOutput();
         }
     }
 
@@ -616,17 +606,6 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
     }
 
     @Override
-    public CompletableFuture<Void> output(OutputEventArguments arguments) {
-        switch (arguments.getCategory()) {
-            case OutputEventArgumentsCategory.STDOUT -> outputLogger.sendProgramOutput(arguments.getOutput());
-            case OutputEventArgumentsCategory.STDERR -> outputLogger.sendErrorOutput(arguments.getOutput());
-            default -> {
-            }
-        }
-        return CompletableFuture.completedFuture(null);
-    }
-
-    @Override
     public CompletableFuture<RunInTerminalResponse> runInTerminal(RunInTerminalRequestArguments args) {
         Endpoint endPoint = new GenericEndpoint(context.getClient());
         endPoint.request(RUN_IN_TERMINAL_REQUEST, args).thenApply((response) -> {
@@ -636,7 +615,7 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
             while (context.getDebuggeeVM() == null && tryCounter < 10) {
                 try {
                     JDIUtils.sleepMillis(3000);
-                    attachToRemoteVM(LOCAL_HOST, clientConfigHolder.getDebuggePort());
+                    attachToRemoteVM("", clientConfigHolder.getDebuggePort());
                 } catch (IOException ignored) {
                     tryCounter++;
                 } catch (IllegalConnectorArgumentsException | ClientConfigurationException e) {
@@ -893,11 +872,11 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
 
             try (BufferedReader inputStream = context.getInputStream()) {
                 String line;
-                outputLogger.sendDebugServerOutput("Waiting for the debug process to start...%s%s"
-                        .formatted(System.lineSeparator(), System.lineSeparator()));
+                outputLogger.sendDebugServerOutput("Waiting for debug process to start..." + System.lineSeparator()
+                        + System.lineSeparator());
                 while ((line = inputStream.readLine()) != null) {
                     if (line.contains("Listening for transport dt_socket")) {
-                        attachToRemoteVM(LOCAL_HOST, clientConfigHolder.getDebuggePort());
+                        attachToRemoteVM("", clientConfigHolder.getDebuggePort());
                     } else if (context.getDebuggeeVM() == null && line.contains(COMPILATION_ERROR_MESSAGE)) {
                         terminateDebugSession(false, true);
                     }
@@ -1188,18 +1167,6 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
         return response;
     }
 
-    private String getAttachmentErrorMessage(Exception e) {
-        String host = ((ClientAttachConfigHolder) clientConfigHolder).getHostName().orElse(LOCAL_HOST);
-        String portName;
-        try {
-            portName = Integer.toString(clientConfigHolder.getDebuggePort());
-        } catch (ClientConfigurationException clientConfigurationException) {
-            portName = VALUE_UNKNOWN;
-        }
-        return String.format("Failed to attach to the target VM address: '%s:%s' due to: %s",
-                host, portName, e.getMessage());
-    }
-
     /**
      * Clears the suspended state information.
      */
@@ -1221,7 +1188,6 @@ public class JBallerinaDebugServer implements BallerinaExtendedDebugServer {
     private void resetServer() {
         Optional.ofNullable(eventProcessor).ifPresent(JDIEventProcessor::reset);
         Optional.ofNullable(outputLogger).ifPresent(DebugOutputLogger::reset);
-        Optional.ofNullable(executionManager).ifPresent(DebugExecutionManager::reset);
         terminateDebuggee();
         clearSuspendedState();
         context.reset();
