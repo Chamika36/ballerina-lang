@@ -185,7 +185,16 @@ function collectQueryOld(stream<Type, CompletionType> strm) returns Type|error {
     return v is record {| Type value; |} ? v.value : v;
 }
 
-function collectQuery(handle strm) returns Type|error = @java:Method {
+function collectQuery(handle strm) returns Type|error {
+   handle v = collectQueryJava(strm);
+   if java:isNull(v) {
+        return ();
+   } else {
+        return <Type> v;
+   }
+}
+
+function collectQueryJava(handle strm) returns handle = @java:Method {
     'class: "io.ballerina.runtime.internal.query.utils.CollectionUtil",
     name: "collectQuery",
     paramTypes: ["java.util.stream.Stream"]

@@ -30,8 +30,8 @@ public class CollectionUtil {
                     .map(frame -> frame.getRecord().get(VALUE_FIELD))
                     .findFirst().get();
 
-            if (result instanceof BValue) {
-                return (BValue) result;
+            if (result == null) {
+                return new ErrorValue(StringUtils.fromString("Empty stream"));
             } else {
                 return result;
             }
