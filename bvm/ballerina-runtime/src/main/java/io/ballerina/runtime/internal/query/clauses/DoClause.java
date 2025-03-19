@@ -41,12 +41,9 @@ public class DoClause implements PipelineStage {
      * @return The same stream after applying the function.
      */
     @Override
-    public Stream<Frame> process(Stream<Frame> inputStream) throws BError {
+    public Stream<Frame> process(Stream<Frame> inputStream) {
         return inputStream.map(frame -> {
             Object result = function.call(env.getRuntime(), frame.getRecord());
-            if (result instanceof BError) {
-                throw (BError) result;
-            }
             if (result != null) {
                 frame.updateRecord($VALUE$_FIELD, result);
                 return frame;

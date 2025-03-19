@@ -72,11 +72,7 @@ public class StreamPipeline {
     }
 
     public static Object getStreamFromPipeline(Object pipeline){
-        try {
-            ((StreamPipeline)pipeline).execute();
-        } catch (BError e) {
-            return e;
-        }
+        ((StreamPipeline)pipeline).execute();
 
 //        return CollectionUtil.toBStream((StreamPipeline) pipeline);
         return (StreamPipeline) pipeline;

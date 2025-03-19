@@ -27,12 +27,8 @@ public class OnConflictClause implements PipelineStage {
     public Stream<Frame> process(Stream<Frame> inputStream) {
         return inputStream.map(frame -> {
             Object result = onConflictFunction.call(env.getRuntime(), frame.getRecord());
-            if (result instanceof BMap) {
-                frame.updateRecord((BMap<BString, Object>) result);
-                return frame;
-            } else {
-                throw (BError) result;
-            }
+            frame.updateRecord((BMap<BString, Object>) result);
+            return frame;
         });
     }
 }

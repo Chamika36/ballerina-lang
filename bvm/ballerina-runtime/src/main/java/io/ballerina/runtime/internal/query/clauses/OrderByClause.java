@@ -36,9 +36,6 @@ public class OrderByClause implements PipelineStage {
         return inputStream.peek(frame -> {
             BMap<BString, Object> record = frame.getRecord();
             Object result = orderKeyFunction.call(env.getRuntime(), record);
-            if (result instanceof BError) {
-                throw (BError) result;
-            }
         }).sorted(getComparator());
     }
 

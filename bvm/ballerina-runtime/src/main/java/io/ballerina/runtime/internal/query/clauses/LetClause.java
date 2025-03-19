@@ -48,14 +48,8 @@ public class LetClause implements PipelineStage {
     public Stream<Frame> process(Stream<Frame> inputStream) {
         return inputStream.map(frame -> {
             Object result = frameModifier.call(env.getRuntime(), frame.getRecord());
-            if (result instanceof Frame) {
-                return (Frame) result;
-            }  else if (result instanceof BMap) {
-                frame.updateRecord((BMap<BString, Object>) result);
-                return frame;
-            } else {
-                throw (BError) result;
-            }
+            frame.updateRecord((BMap<BString, Object>) result);
+            return frame;
         });
     }
 }

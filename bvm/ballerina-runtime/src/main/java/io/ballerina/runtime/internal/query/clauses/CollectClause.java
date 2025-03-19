@@ -49,7 +49,7 @@ public class CollectClause implements PipelineStage {
      * @return A transformed stream with the collected frame.
      */
     @Override
-    public Stream<Frame> process(Stream<Frame> inputStream) throws BError {
+    public Stream<Frame> process(Stream<Frame> inputStream) {
         Frame groupedFrame = new Frame();
         BMap<BString, Object> groupedRecord = groupedFrame.getRecord();
 
@@ -74,16 +74,10 @@ public class CollectClause implements PipelineStage {
         });
 
         return Stream.of(groupedFrame).map(frame -> {
-            Object result = collectFunc.call(env.getRuntime(), groupedRecord);
-            if (result instanceof BError) {
-                throw (BError) result;
-            } else if (result instanceof BMap) {
-                Frame collectedFrame = new Frame();
-                collectedFrame.updateRecord((BMap<BString, Object>) result);
-                return collectedFrame;
-            } else {
-                throw (BError) result;
-            }
+        Object result = collectFunc.call(env.getRuntime(), groupedRecord);
+            Frame collectedFrame = new Frame();
+            collectedFrame.updateRecord((BMap<BString, Object>) result);
+            return collectedFrame;
         });
     }
 
