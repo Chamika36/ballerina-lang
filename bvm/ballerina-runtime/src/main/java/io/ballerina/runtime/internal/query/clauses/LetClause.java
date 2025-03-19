@@ -5,6 +5,7 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BFunctionPointer;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.internal.query.pipeline.ErrorFrame;
 import io.ballerina.runtime.internal.query.pipeline.Frame;
 
 import java.util.stream.Stream;
@@ -48,14 +49,13 @@ public class LetClause implements PipelineStage {
     public Stream<Frame> process(Stream<Frame> inputStream) {
         return inputStream.map(frame -> {
             Object result = frameModifier.call(env.getRuntime(), frame.getRecord());
-            if (result instanceof Frame) {
-                return (Frame) result;
-            }  else if (result instanceof BMap) {
+            if (result instanceof BMap) {
                 frame.updateRecord((BMap<BString, Object>) result);
                 return frame;
-            } else {
-                throw (BError) result;
+            } else if (result instanceof BError error) {
+                return ErrorFrame.from(error);
             }
+            return frame;
         });
     }
 }

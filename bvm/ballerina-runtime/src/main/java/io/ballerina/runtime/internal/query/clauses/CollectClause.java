@@ -4,6 +4,7 @@ import io.ballerina.runtime.api.Environment;
 import io.ballerina.runtime.api.creators.TypeCreator;
 import io.ballerina.runtime.api.types.PredefinedTypes;
 import io.ballerina.runtime.api.values.*;
+import io.ballerina.runtime.internal.query.pipeline.ErrorFrame;
 import io.ballerina.runtime.internal.query.pipeline.Frame;
 import io.ballerina.runtime.internal.values.ArrayValueImpl;
 
@@ -75,14 +76,14 @@ public class CollectClause implements PipelineStage {
 
         return Stream.of(groupedFrame).map(frame -> {
             Object result = collectFunc.call(env.getRuntime(), groupedRecord);
-            if (result instanceof BError) {
-                throw (BError) result;
+            if (result instanceof BError error) {
+                return ErrorFrame.from(error);
             } else if (result instanceof BMap) {
                 Frame collectedFrame = new Frame();
                 collectedFrame.updateRecord((BMap<BString, Object>) result);
                 return collectedFrame;
             } else {
-                throw (BError) result;
+                return (Frame) result;
             }
         });
     }

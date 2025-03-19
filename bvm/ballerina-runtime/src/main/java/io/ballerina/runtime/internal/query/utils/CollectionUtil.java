@@ -37,9 +37,9 @@ public class CollectionUtil {
 
     public static Object createArray(StreamPipeline pipeline, BArray array) {
         Stream<Frame> strm = pipeline.getStream();
-        Iterator<Frame> it = strm.iterator();
-        while (it.hasNext()) {
-            switch (it.next()) {
+        Iterator<Frame> itr = strm.iterator();
+        while (itr.hasNext()) {
+            switch (itr.next()) {
                 case ErrorFrame errorFrame:
                     return errorFrame.getError();
                 case Frame frame:

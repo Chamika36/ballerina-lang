@@ -5,6 +5,7 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BFunctionPointer;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.internal.query.pipeline.ErrorFrame;
 import io.ballerina.runtime.internal.query.pipeline.Frame;
 
 import java.util.stream.Stream;
@@ -30,9 +31,10 @@ public class OnConflictClause implements PipelineStage {
             if (result instanceof BMap) {
                 frame.updateRecord((BMap<BString, Object>) result);
                 return frame;
-            } else {
-                throw (BError) result;
+            } else if (result instanceof BError error) {
+                return ErrorFrame.from(error);
             }
+            return frame;
         });
     }
 }

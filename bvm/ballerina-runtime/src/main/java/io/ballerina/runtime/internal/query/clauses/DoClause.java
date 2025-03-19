@@ -6,6 +6,7 @@ import io.ballerina.runtime.api.values.BError;
 import io.ballerina.runtime.api.values.BFunctionPointer;
 import io.ballerina.runtime.api.values.BMap;
 import io.ballerina.runtime.api.values.BString;
+import io.ballerina.runtime.internal.query.pipeline.ErrorFrame;
 import io.ballerina.runtime.internal.query.pipeline.Frame;
 
 import java.util.stream.Stream;
@@ -44,8 +45,8 @@ public class DoClause implements PipelineStage {
     public Stream<Frame> process(Stream<Frame> inputStream) throws BError {
         return inputStream.map(frame -> {
             Object result = function.call(env.getRuntime(), frame.getRecord());
-            if (result instanceof BError) {
-                throw (BError) result;
+            if (result instanceof BError error) {
+                return ErrorFrame.from(error);
             }
             if (result != null) {
                 frame.updateRecord($VALUE$_FIELD, result);

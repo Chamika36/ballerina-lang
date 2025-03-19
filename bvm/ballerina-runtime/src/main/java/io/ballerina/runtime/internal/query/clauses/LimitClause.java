@@ -46,7 +46,7 @@ public class LimitClause implements PipelineStage {
     public Stream<Frame> process(Stream<Frame> inputStream) {
         // Evaluate the limit function only once.
         Object limitResult = limitFunction.call(env.getRuntime(), new Frame().getRecord());
-        if (limitResult instanceof BError) {
+        if (limitResult instanceof BError error) {
             throw (BError) limitResult;
         }
         Long limit = (Long) limitResult;
