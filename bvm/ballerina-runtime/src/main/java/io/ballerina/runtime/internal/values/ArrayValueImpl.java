@@ -292,7 +292,8 @@ public class ArrayValueImpl extends AbstractArrayValue {
 
         int index = 0;
         for (BListInitialValueEntry listEntry : initialValues) {
-            if (listEntry instanceof ListInitialValueEntry.ExpressionEntry) {
+            if
+            (listEntry instanceof ListInitialValueEntry.ExpressionEntry) {
                 addRefValue(index++, ((ListInitialValueEntry.ExpressionEntry) listEntry).value);
             } else {
                 BArray values = ((ListInitialValueEntry.SpreadEntry) listEntry).values;
